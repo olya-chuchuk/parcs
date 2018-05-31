@@ -1,0 +1,127 @@
+import jacobi.*;
+import java.util.*;
+import java.io.*;
+import parcs.*;
+import HostsServer.*;
+
+public class Main implements AM
+{
+	static int numberOfThreads;
+	static int n;
+	
+	private static void generateInputData(int size) {
+		n = size;
+		int minValue = 10;
+		MatrixGenerator generator = new MatrixGenerator(n, minValue);
+		generator.generateInputData();
+		System.out.println("Finished");
+	}
+		
+	public double getDelta(MyVector xPrev, MyVector xNext) 
+	{
+		System.out.println("In delta");
+		double sum = 0;
+		for (int i = 0; i < xPrev.getLength(); ++i) {
+			sum += xNext.getItem(i) - xPrev.getItem(i);
+		}
+		return sum;
+	}
+	
+	public void run(AMInfo info) {
+		String matrixFileName = "matrix10.txt", 
+				vectorFileName = "vector10.txt",
+				resultFileName = "result.txt";
+		double epsilon = 1e-4;
+		int blocks = n / numberOfThreads;
+		MyMatrix a = new MyMatrix(n,n);
+        MyVector b = new MyVector(n);
+        MyVector xPrev = new MyVector(n);
+        MyVector xNext = new MyVector(n);
+        MyVector temp1 = new MyVector(0);
+
+        a.readFromFile(matrixFileName);      
+        b.readFromFile(vectorFileName); 
+        
+		point[] p = new point[numberOfThreads];
+        channel[] c = new channel[numberOfThreads];
+        
+        for (int i=0; i<numberOfThreads; i++) {
+            p[i] = info.createPoint();
+            c[i] = p[i].createChannel();
+            p[i].execute("JacobiThread");
+        }
+                  
+        double time = System.currentTimeMillis();
+        
+        System.out.println("\nComputing...");
+		System.out.println("Threads: " + numberOfThreads + " blocks in each: " + blocks);
+        // main loop
+        do {
+			System.out.println("\nIn the loop");
+        	xPrev = xNext;//TODO
+			for(int i = 0; i < numberOfThreads; ++i) {
+				MyMatrix m = a.SubMatrix(blocks * i, 0, blocks, n);
+				MyVector v = b.SubVector(blocks * i, blocks);
+				System.out.println("matrix" );
+				System.out.println("vector" );
+				c[i].write(m);
+				c[i].write(v);
+				System.out.println("blocks*i " + (blocks * i));
+				c[i].write(blocks * i);
+				c[i].write(xPrev);
+
+				double[] temp2 = (double[])c[i].readObject();
+				temp1.append(temp2);//TODO
+			}
+			
+			xNext = new MyVector(temp1);
+			System.out.println("xNext" + xNext);
+
+    //     	for (int i = 0; i < blocks; ++i){
+    //     		for (int j = 0; j < numberOfThreads; ++j) {
+    //     			c[j].write(a);
+    //     			c[j].write(b);//TODO
+    //     			c[j].write(xPrev);
+    //     			c[j].write(j);
+    //     		}
+        		
+    //     		for (int j = 0; j < numberOfThreads; ++j) {
+    //     			double xJ = c[j].readDouble();
+				// 	int index = i + j;
+    //     			xNext.setItem(i + j, xJ);
+				// 	System.out.println("xNext[" + index + "] " + xJ);
+    //     		}
+				// System.out.println();
+        	//}
+        	
+        } while (getDelta(xPrev, xNext) > epsilon);
+        
+        time = (System.currentTimeMillis() - time) / 1000000000.0;
+        System.out.println("\nResult found! Saving to file ");
+        System.out.println("\nTime: " + time);
+        xNext.writeToFile(resultFileName);
+	}
+	
+	public static void main(String[] args) throws IOException{
+		//int size = 1000;
+		//generateInputData(size);
+		if (args.length < 1) {
+            System.out.println("Path number is not specified"); 
+			return;
+        }
+		String param1 = args[0],
+				param2 = args[1];
+		n = Integer.parseInt(param1);
+		numberOfThreads = Integer.parseInt(param2);
+		if (n % numberOfThreads != 0) {
+			System.out.println("Number of rows must be divisible by the number of threads"); 
+			return;
+		}
+		task curtask = new task();
+		curtask.addJarFile("jacobi.jar");
+		(new Main()).run(new AMInfo(curtask, (channel)null));
+		curtask.end();
+	}
+
+	
+}
